@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+import base64
+import requests
+import string
+import re
+import heapq
+import operator
+import textdistance
+from nltk.stem import PorterStemmer
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.corpus import stopwords
+from summa.summarizer import summarize
+from rake_nltk import Rake
+from random import shuffle
+
+def contentPrint(bool, URL):
+	req = requests.get(URL, auth=([USERNAME], [OAUTHTOKEN]))
+
+	if req.status_code == requests.codes.ok:
+		content = decode(req)
+		content = regex(content)
+		if bool == True:
+			content = summarize(content, words=50)
+		return content
+
+	else:
+		print('Content was not found')
+		return ""
+
+def topicsPrint(filtered_content):
+	headers = {'Accept':'application/vnd.github.mercy-preview+json', 'Authorization': [USERNAME]}
+	req = requests.get(topicsURL, headers = headers)
+	if req.status_code == requests.codes.ok:
+		req = req.json()
+		content = req['names']
+
+		if len(content) == 0:
+			print("Unable to tag")
+			currContent = ""
+			
+			while currContent != "exit":
+				currContent = input("Enter a topic for this repo or 'exit' to submit current suggestions: ")
+				content.append(currContent)
+			content.remove("exit")
+
+			scores = {}
+
+			for x in range(len(content)):
+				scores[content[x]] = textdistance.ratcliff_obershelp(filtered_content, content[x])
+
+			print(scores)
+
+			return(max(scores.items(), key=operator.itemgetter(1))[0])
+
+		else:
+			scores = {}
+
+			for x in range(len(content)):
+				scores[content[x]] = textdistance.ratcliff_obershelp(filtered_content, content[x])
+
+
+			return(max(scores.items(), key=operator.itemgetter(1))[0])
+
+	else:
+		print('Content was not found')
+		content = []
+
+		currContent = ""
+
+		while currContent != "exit":
+			currContent = input("Enter a topic for this repo or 'exit' to submit current suggestions: ")
+			content.append(currContent)
+		content.remove("exit")
+
+		scores = {}
+
+		for x in range(len(content)):
+			scores[content[x]] = textdistance.ratcliff_obershelp(filtered_content, content[x])
+
+		print(scores)
+
+		return(max(scores.items(), key=operator.itemgetter(1))[0])
+
+def topicReq(req):
+	similar = {}
+	if req.status_code == requests.codes.ok:
+		content = req.content.decode("utf-8")
+		content = content.replace('\n', ' ').replace('\r', ' ')
+		content = re.findall('<a         href="(.{1,35})"         data-ga-click="Explore, go to repository,', content)#'<a href="/ldionne/dyno"', content) #Regex repo list
+		i = 0
+		for x in content:
+			similar[i] = contentPrint(True, f'https://api.github.com/repos{x}/contents/README.md')
+			i += 1
+			if i == 5:
+				return similar
+		return similar
+	return None
+
+
+def searchReq(req):
+	similar = {}
+	if req.status_code == requests.codes.ok:
+		content = req.content.decode("utf-8")
+		content = content.replace('\n', ' ').replace('\r', ' ')
+		content = re.search('<ul class="repo-list">(.*)</ul>', content) #Regex repo list
+		content = content.group(0)
+		content = re.findall('&quot;url&quot;:&quot;(.{150})', content) #Pull repo URL's alongside extra tokens to prevent Regex-ing unwanted sections
+		i = 0
+		for x in content:
+			x = x.replace('&', ' ')
+			x = re.search('http\S+', x)
+			x = x.group(0) #Regex URL from shortened strings
+			x = re.sub(r'https://github.com', '', x) # remove initial link
+			similar[i] = contentPrint(True, f'https://api.github.com/repos{x}/contents/README.md')
+			i += 1
+			if i == 5:
+				return similar
+		return similar
+	return None
+
+def findSimilar(query):
+	query = re.sub(r' ', '%20', query)
+	req = requests.get(f'https://github.com/topics/{query}')
+	req = topicReq(req)
+	if req == None or req == {}:
+		req = requests.get(f'https://github.com/search?q={query}')
+		req = searchReq(req)
+		if req == None or req == {}:
+			return {"Error, unable to find repos with this topic"}
+		return req
+	return req
+
+def decode(req):
+	req = req.json()
+	content = base64.b64decode(req['content'])
+	content = str(content, "utf-8")
+
+	content = content.lower()
+	return content
+
+def regex(content):
+	filtered_content = re.sub(r'\`\`\`.*\`\`\`', '', content, flags = re.MULTILINE|re.DOTALL) # remove code segments
+	filtered_content = re.sub(r'\|.*\|', '', filtered_content) # remove code segments
+	filtered_content = re.sub(r'\<.*\>', '', filtered_content) # remove any '<WORD>'
+	filtered_content = re.sub(r'\`.*\`', '', filtered_content) # remove any '`WORD`'
+	filtered_content = re.sub(r'http\S+', '', filtered_content) # remove links
+	filtered_content = re.sub(r'\[', '', filtered_content) # remove opening square brace
+	filtered_content = re.sub(r'\]', '', filtered_content) # remove closing square brace
+	filtered_content = re.sub(r'\n\s*\n', '\n', filtered_content) # remove empty lines
+	filtered_content = re.sub(r'\_', '', filtered_content) # remove underscore
+	filtered_content = re.sub(r'\#', '', filtered_content) # remove hash symbol
+	filtered_content = re.sub(r':', '', filtered_content) # remove colon
+	filtered_content = re.sub(r'=', '', filtered_content) # remove equals
+
+	return filtered_content
+
+'''
+MAIN
+'''
+selection = input("Please enter the GitHub repo URL:")
+selection = selection.split('/')
+
+present = False
+for i, token in enumerate(selection):
+	if 'github.com' in token:
+		present = True
+		loc = i
+
+if not present:
+	print("Error: Valid GitHub URL not provided")
+	exit()
+else:
+	user = selection[loc+1]
+	repo = selection[loc+2]
+
+repoURL = f'https://api.github.com/repos/{user}/{repo}/contents/README.md'
+topicsURL = f'https://api.github.com/repos/{user}/{repo}/topics'
+
+f = open("summa.txt","w+")
+fList = {}
+
+'''
+Find first 4 regex'ed sentences of repo
+'''
+sentenceSummary = contentPrint(False, repoURL)
+sentenceSummary = sent_tokenize(sentenceSummary)
+sentenceSummary = " ".join(sentenceSummary[:4])
+sentenceSummary = ''.join([char if ord(char) < 128 else '' for char in sentenceSummary])
+fList[0] = "=SENTENC=\n" + sentenceSummary + "\n========="
+
+
+'''
+Find single README summary
+'''
+READMESummary = contentPrint(True, repoURL)
+READMESummary = ''.join([char if ord(char) < 128 else '' for char in READMESummary])
+fList[1] = "=README!=\n" + READMESummary + "\n========="
+
+'''
+Find similar repo summary
+'''
+query = topicsPrint(READMESummary)
+similarReposList = findSimilar(query)
+similarRepoSummary = ""
+print(similarReposList)
+for i in similarReposList:
+	similarRepoSummary += similarReposList[i]
+similarRepoSummary = ''.join([char if ord(char) < 128 else '' for char in similarRepoSummary])
+similarRepoSummary = summarize(similarRepoSummary, words=50)
+fList[2] = "=SIMILAR=\n" + similarRepoSummary + "\n========="
+
+'''
+Input user summary
+'''
+userSummary = ""
+index = ""
+while index != "END":
+	index = input("Enter your summary: (type 'END' to terminate input)\n")
+	userSummary += index + '\n'
+userSummary = re.sub(r'END', '', userSummary)
+print(userSummary)
+fList[3] = "=SUBMITD=\n" + userSummary + "========="
+
+'''
+Shuffle list & write to file
+'''
+shuffle(fList)
+for i in fList:
+	f.write(fList[i] + '\n')
+
+# I will then copy the file & regex out the identifying titles to present while keeping a master copy for scoring
