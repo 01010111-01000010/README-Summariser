@@ -40,7 +40,7 @@ def contentPrint(bool, URL):
 		return ""
 
 '''
-topicsPrint(filtered_content)
+topicsPrint(URL, filtered_content)
 URL: API link to repo's GitHub topics
 filtered_content: repo summary
 
@@ -89,8 +89,11 @@ def topicsPrint(URL, filtered_content):
 topicReq(req)
 req: request object for associated topic query
 
+The function regexes the request of a GitHub topic search query & finds up to 5 repos that GitHub first recommend
 
+Returns a string array of API URL's of up to 5 in length or a None if no search results are found
 
+Could be merged with searchReq with a more succinct solution to the spider
 '''
 def topicReq(req):
 	similar = {}
@@ -108,6 +111,16 @@ def topicReq(req):
 	return None
 
 
+'''
+searchReq(req)
+req: request object for associated search query
+
+The function regexes the request of a GitHub search query & finds up to 5 repos that GitHub first recommend
+
+Returns a string array of API URL's of up to 5 in length or a None if no search results are found
+
+Could be merged with topicReq with a more succinct solution to the spider
+'''
 def searchReq(req):
 	similar = {}
 	if req.status_code == requests.codes.ok:
@@ -129,6 +142,16 @@ def searchReq(req):
 		return similar
 	return None
 
+'''
+findSimilar(query)
+query: search/topic string used in identifying "similar" repos
+
+The function takes the argument string & checks GitHub for a matching topic in their topic list.
+If it is unable to find a topic, it will then use the string as a search term as a backup.
+If it is still unable to find any repos as part of the search it will return an error string
+
+Returns an array of repos (in order of prevalence) of the topic, search term, or an error string
+'''
 def findSimilar(query):
 	query = re.sub(r' ', '%20', query)
 	req = requests.get(f'https://github.com/topics/{query}')
@@ -141,6 +164,14 @@ def findSimilar(query):
 		return req
 	return req
 
+'''
+decode(req)
+req: GitHub API request object
+
+De-JSON's the request object & extracts the string contents
+
+Returns a string of the webpage content
+'''
 def decode(req):
 	req = req.json()
 	content = base64.b64decode(req['content'])
@@ -149,6 +180,14 @@ def decode(req):
 	content = content.lower()
 	return content
 
+'''
+regex(content)
+content: string of text content
+
+Performs a series of regex queries to reduce a body of text
+
+Returns the input string minus all the regex terms
+'''
 def regex(content):
 	filtered_content = re.sub(r'\`\`\`.*\`\`\`', '', content, flags = re.MULTILINE|re.DOTALL) # remove code segments
 	filtered_content = re.sub(r'\|.*\|', '', filtered_content) # remove code segments

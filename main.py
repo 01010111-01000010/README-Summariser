@@ -13,6 +13,15 @@ from summa.summarizer import summarize
 from rake_nltk import Rake
 from random import shuffle
 
+'''
+contentPrint(bool, URL)
+bool: if true, summarise repo content
+URL: repo URL string
+
+Collects repo content from the URL & processes it
+
+Returns processed content or an error message if it is not found
+'''
 def contentPrint(bool, URL):
 	req = requests.get(URL, auth=([USERNAME], [OAUTHTOKEN]))
 
@@ -27,6 +36,17 @@ def contentPrint(bool, URL):
 		print('Content was not found')
 		return ""
 
+'''
+topicsPrint(filtered_content)
+filtered_content: pre-processed repo README
+
+The GitHub provided topics for a repo are ranked and a single topic to represent the repo is chosen.
+If a topic isn't found the repo header paragraph is processed to find a topic.
+In the event a topic is still not determined, the user is asked to provide one.
+An error string is provided if the requests are not fulfilled.
+
+Returns the string of the highest ranked topic or an error string
+'''
 def topicsPrint(filtered_content):
 	headers = {'Accept':'application/vnd.github.mercy-preview+json', 'Authorization': [USERNAME]}
 	req = requests.get(topicsURL, headers = headers)
@@ -81,6 +101,16 @@ def topicsPrint(filtered_content):
 
 		return(max(scores.items(), key=operator.itemgetter(1))[0])
 
+'''
+topicReq(req)
+req: request object for associated topic query
+
+The function regexes the request of a GitHub topic search query & finds up to 5 repos that GitHub first recommend
+
+Returns a string array of API URL's of up to 5 in length or a None if no search results are found
+
+Could be merged with searchReq with a more succinct solution to the spider
+'''
 def topicReq(req):
 	similar = {}
 	if req.status_code == requests.codes.ok:
@@ -96,7 +126,16 @@ def topicReq(req):
 		return similar
 	return None
 
+'''
+searchReq(req)
+req: request object for associated search query
 
+The function regexes the request of a GitHub search query & finds up to 5 repos that GitHub first recommend
+
+Returns a string array of API URL's of up to 5 in length or a None if no search results are found
+
+Could be merged with topicReq with a more succinct solution to the spider
+'''
 def searchReq(req):
 	similar = {}
 	if req.status_code == requests.codes.ok:
@@ -118,6 +157,16 @@ def searchReq(req):
 		return similar
 	return None
 
+'''
+findSimilar(query)
+query: search/topic string used in identifying "similar" repos
+
+The function takes the argument string & checks GitHub for a matching topic in their topic list.
+If it is unable to find a topic, it will then use the string as a search term as a backup.
+If it is still unable to find any repos as part of the search it will return an error string
+
+Returns an array of repos (in order of prevalence) of the topic, search term, or an error string
+'''
 def findSimilar(query):
 	query = re.sub(r' ', '%20', query)
 	req = requests.get(f'https://github.com/topics/{query}')
@@ -130,6 +179,14 @@ def findSimilar(query):
 		return req
 	return req
 
+'''
+decode(req)
+req: GitHub API request object
+
+De-JSON's the request object & extracts the string contents
+
+Returns a string of the webpage content
+'''
 def decode(req):
 	req = req.json()
 	content = base64.b64decode(req['content'])
@@ -138,6 +195,14 @@ def decode(req):
 	content = content.lower()
 	return content
 
+'''
+regex(content)
+content: string of text content
+
+Performs a series of regex queries to reduce a body of text
+
+Returns the input string minus all the regex terms
+'''
 def regex(content):
 	filtered_content = re.sub(r'\`\`\`.*\`\`\`', '', content, flags = re.MULTILINE|re.DOTALL) # remove code segments
 	filtered_content = re.sub(r'\|.*\|', '', filtered_content) # remove code segments
